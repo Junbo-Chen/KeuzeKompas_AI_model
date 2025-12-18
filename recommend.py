@@ -57,15 +57,32 @@ EXTRA_NOISE = {
     # Engels (veel voorkomend ruis)
     "you", "your", "are", "will", "what", "then", "like", "choose",
     "interested", "experience", "experiencing",
-    "learning", "thinking", "business", "branding",
+    "learning", "thinking",
     "and", "the", "for", "with", "from", "about",
 
     # Overig
     "hbo", "urban", "veiligheid", "test", "concept",
     "bouwen", "gebouwde", "materiaal", "materialen",
-    "yellow", "belt", "serious", "hrm", "mensen",
+    "yellow", "belt", "serious",
     "leven", "druk", "manieren", "kijken"
 }
+
+SHORT_TERM_ALLOWLIST = {
+    # Technologie & data
+    "ai", "it", "bi", "ml", "vr", "ar", "ux", "ui", "qa",
+
+    # Media / communicatie / creatief
+    "pr",
+
+    # Organisatie / mens / maatschappij
+    "hr", "er",
+
+    # Zorg & welzijn
+    "gz", "gg",
+
+    # Economie / recht
+    "bt", "tv"
+    }
 
 TEXT_STOPWORDS = DUTCH_STOPWORDS | EXTRA_NOISE
 
@@ -94,10 +111,17 @@ def prepare_text_for_matching(text: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     
     # stopwoorden filteren
-    tokens = [
-        tok for tok in text.split()
-        if tok not in TEXT_STOPWORDS and len(tok) > 2
-    ]
+    tokens = []
+    for tok in text.split():
+        if tok in TEXT_STOPWORDS:
+            continue
+
+        # Houd belangrijke korte termen
+        if len(tok) <= 2 and tok not in SHORT_TERM_ALLOWLIST:
+            continue
+
+        tokens.append(tok)
+
     
     return " ".join(tokens)
 
