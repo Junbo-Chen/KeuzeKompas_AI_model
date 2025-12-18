@@ -1,13 +1,15 @@
+import os
 import re
 import string
 import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from nltk.corpus import stopwords 
 import nltk
-from nltk.corpus import stopwords
 import random
 from typing import List, Optional
+from fastapi import HTTPException
 
 try:
     DUTCH_STOPWORDS = set(stopwords.words("dutch"))
@@ -57,15 +59,32 @@ EXTRA_NOISE = {
     # Engels (veel voorkomend ruis)
     "you", "your", "are", "will", "what", "then", "like", "choose",
     "interested", "experience", "experiencing",
-    "learning", "thinking", "business", "branding",
+    "learning", "thinking",
     "and", "the", "for", "with", "from", "about",
 
     # Overig
     "hbo", "urban", "veiligheid", "test", "concept",
     "bouwen", "gebouwde", "materiaal", "materialen",
-    "yellow", "belt", "serious", "hrm", "mensen",
+    "yellow", "belt", "serious",
     "leven", "druk", "manieren", "kijken"
 }
+
+SHORT_TERM_ALLOWLIST = {
+    # Technologie & data
+    "ai", "it", "bi", "ml", "vr", "ar", "ux", "ui", "qa",
+
+    # Media / communicatie / creatief
+    "pr",
+
+    # Organisatie / mens / maatschappij
+    "hr", "er",
+
+    # Zorg & welzijn
+    "gz", "gg",
+
+    # Economie / recht
+    "bt", "tv"
+    }
 
 TEXT_STOPWORDS = DUTCH_STOPWORDS | EXTRA_NOISE
 
@@ -94,15 +113,23 @@ def prepare_text_for_matching(text: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     
     # stopwoorden filteren
-    tokens = [
-        tok for tok in text.split()
-        if tok not in TEXT_STOPWORDS and len(tok) > 2
-    ]
+    tokens = []
+    for tok in text.split():
+        if tok in TEXT_STOPWORDS:
+            continue
+
+        # Houd belangrijke korte termen
+        if len(tok) <= 2 and tok not in SHORT_TERM_ALLOWLIST:
+            continue
+
+        tokens.append(tok)
+
     
     return " ".join(tokens)
 
 # Laad de dataset
-df = pd.read_csv("Uitgebreide_VKM_dataset_cleaned.csv")
+DATA_PATH = os.getenv("DATA_PATH", "app/Uitgebreide_VKM_dataset_cleaned.csv")
+df = pd.read_csv(DATA_PATH)
 
 # Verwachte kolommen (minimaal):
 # id, name, shortdescription, location, studycredit, level, module_tags, ...
@@ -110,8 +137,7 @@ df = pd.read_csv("Uitgebreide_VKM_dataset_cleaned.csv")
 
 df['combined_text'] = (
     df['name'].fillna('') + ' ' +
-    df['description'].fillna('') + ' ' +
-    df['module_tags'].fillna('')
+    df['shortdescription'].fillna('') 
 ).apply(prepare_text_for_matching)
 
 # Vectorizer fitten op de complete dataset
@@ -123,6 +149,10 @@ vectorizer = TfidfVectorizer(
 X = vectorizer.fit_transform(df["combined_text"])
 
 FEATURE_NAMES = vectorizer.get_feature_names_out()
+
+def validate_bio(text: str):
+    if not re.match(r"^[\w\s\-\.,!?]+$", text, re.UNICODE):
+        raise HTTPException(status_code=400, detail="Invalid characters in bio")
 
 def _format_term_list(terms: List[str]) -> str:
     """
@@ -214,6 +244,7 @@ def recommend_modules(
     - match_terms
     - reason (duidelijk-uitleg)
     """
+    validate_bio(student_profile)
 
     # Start met volledige df
     filtered_df = df.copy()
