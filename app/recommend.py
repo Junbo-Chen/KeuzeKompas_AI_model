@@ -5,226 +5,305 @@ import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from nltk.corpus import stopwords 
+from nltk.corpus import stopwords
 import nltk
-import random
 from typing import List, Optional
-from fastapi import HTTPException
 
+# Download Nederlandse stopwoorden
 try:
     DUTCH_STOPWORDS = set(stopwords.words("dutch"))
 except LookupError:
     nltk.download("stopwords")
     DUTCH_STOPWORDS = set(stopwords.words("dutch"))
 
-# Optioneel: extra domein-specifieke "ruiswoorden"
-EXTRA_NOISE = {
-    # Algemene Nederlandse stopwoorden (extra)
-    "bij", "voor", "met", "door", "zonder", "over", "onder", "tegen",
-    "tussen", "na", "vooraf", "achter", "tijdens", "binnen", "buiten",
-
-    # Onderwijs / studiecontext
-    "school", "opleiding", "opleidingen", "module", "modules",
-    "keuzemodule", "minor", "programma", "leerjaar", "jaar",
-    "week", "periode", "semester", "studie", "studies",
-    "student", "studenten", "leerling", "leerlingen",
-    "docent", "docenten", "les", "lessen",
-
-    # Leren & ontwikkelen (vaak leeg in betekenis)
-    "leren", "geleerd", "leren", "ontwikkeling", "ontwikkelen",
-    "verdieping", "kennis", "vaardigheid", "vaardigheden",
-    "ervaring", "ervaringen", "competentie", "competenties",
-    "theorie", "praktijk", "praktische", "inhoudelijk",
-
-    # Project / werk / stage
-    "werk", "werken", "werkzaamheden", "proces",
-    "project", "projecten", "casus", "casussen", "cases",
-    "stage", "stages", "stageplek", "stageschool",
-    "opdracht", "opdrachten",
-
-    # Algemene vaagheid / marketingtaal
-    "belangrijk", "positief", "negatief", "mogelijk", "mogelijkheden",
-    "mogelijkheid", "impact", "betekenis", "betekent", "waarde",
-    "focus", "gericht", "actief", "actieve", "nieuwe", "actueel",
-
-    # Gedrag / houding
-    "openstaan", "samen", "samenwerken", "zelf", "eigen",
-    "denken", "doen", "maken", "kiezen", "kies", "vinden",
-    "vind", "gaan", "kun", "kan", "zullen", "worden",
-
-    # Contextwoorden
-    "omgeving", "context", "situatie", "praktische",
-    "brede", "complexe", "diverse", "verschillende",
-
-    # Engels (veel voorkomend ruis)
-    "you", "your", "are", "will", "what", "then", "like", "choose",
-    "interested", "experience", "experiencing",
-    "learning", "thinking",
-    "and", "the", "for", "with", "from", "about",
-
-    # Overig
-    "hbo", "urban", "veiligheid", "test", "concept",
-    "bouwen", "gebouwde", "materiaal", "materialen",
-    "yellow", "belt", "serious",
-    "leven", "druk", "manieren", "kijken"
-}
-
-SHORT_TERM_ALLOWLIST = {
-    # Technologie & data
-    "ai", "it", "bi", "ml", "vr", "ar", "ux", "ui", "qa",
-
-    # Media / communicatie / creatief
-    "pr",
-
-    # Organisatie / mens / maatschappij
-    "hr", "er",
-
-    # Zorg & welzijn
-    "gz", "gg",
-
-    # Economie / recht
-    "bt", "tv"
-    }
-
-TEXT_STOPWORDS = DUTCH_STOPWORDS | EXTRA_NOISE
-
-PUNCT_TABLE = str.maketrans("", "", string.punctuation + "’‘“”´`")
-def prepare_text_for_matching(text: str) -> str:
-    """
-    Maakt tekst klaar voor matching:
-    - lowercase
-    - verwijder punctuation
-    - verwijder cijfers
-    - verwijder NL stopwoorden (+ extra noise)
-    """
-    if not isinstance(text, str):
-        return ""
-    
-    # lowercasing
-    text = text.lower()
-    
-    # punctuation verwijderen
-    text = text.translate(PUNCT_TABLE)
-    
-    # cijfers eruit
-    text = re.sub(r"\d+", " ", text)
-    
-    # meerdere spaties
-    text = re.sub(r"\s+", " ", text).strip()
-    
-    # stopwoorden filteren
-    tokens = []
-    for tok in text.split():
-        if tok in TEXT_STOPWORDS:
-            continue
-
-        # Houd belangrijke korte termen
-        if len(tok) <= 2 and tok not in SHORT_TERM_ALLOWLIST:
-            continue
-
-        tokens.append(tok)
-
-    
-    return " ".join(tokens)
-
-# Laad de dataset
-DATA_PATH = os.getenv("DATA_PATH", "app/Uitgebreide_VKM_dataset_cleaned.csv")
-df = pd.read_csv(DATA_PATH)
-
-# Verwachte kolommen (minimaal):
-# id, name, shortdescription, module_tags, ...
-# We maken/overschrijven een 'combined_text'-kolom op basis van relevante velden.
-
-df['combined_text'] = (
-    df['name'].fillna('') + ' ' +
-    df['shortdescription'].fillna('') 
-).apply(prepare_text_for_matching)
-
-# Vectorizer fitten op de complete dataset
-vectorizer = TfidfVectorizer(
-    ngram_range=(1, 1),  # alleen unigrams
-    max_df=0.8,      # woorden die te vaak voorkomen eruit (>80% van de docs)
-    min_df=2,        # woorden die maar 1x voorkomen eruit
-)
-X = vectorizer.fit_transform(df["combined_text"])
-
-FEATURE_NAMES = vectorizer.get_feature_names_out()
-
 def validate_bio(text: str):
+    """Valideer of de bio alleen toegestane karakters bevat"""
     if not re.match(r"^[\w\s\-\.,!?]+$", text, re.UNICODE):
         raise HTTPException(status_code=400, detail="Invalid characters in bio")
+        
+class TextCleaner:
+    """Maakt tekst schoon voor analyse"""
+    
+    def __init__(self):
+        # Woorden die we willen negeren omdat ze weinig betekenis hebben
+        self.ignore_words = DUTCH_STOPWORDS | {
+            # Algemene Nederlandse stopwoorden (extra)
+            "bij", "voor", "met", "door", "zonder", "over", "onder", "tegen",
+            "tussen", "na", "vooraf", "achter", "tijdens", "binnen", "buiten",
+            # Onderwijs / studiecontext
+            "school", "opleiding", "opleidingen", "module", "modules",
+            "keuzemodule", "minor", "programma", "leerjaar", "jaar",
+            "week", "periode", "semester", "studie", "studies",
+            "student", "studenten", "leerling", "leerlingen",
+            "docent", "docenten", "les", "lessen",
+            # Leren & ontwikkelen (vaak leeg in betekenis)
+            "leren", "geleerd", "leren", "ontwikkeling", "ontwikkelen",
+            "verdieping", "kennis", "vaardigheid", "vaardigheden",
+            "ervaring", "ervaringen", "competentie", "competenties",
+            "theorie", "praktijk", "praktische", "inhoudelijk",
+            # Project / werk / stage
+            "werk", "werken", "werkzaamheden", "proces",
+            "project", "projecten", "casus", "casussen", "cases",
+            "stage", "stages", "stageplek", "stageschool",
+            "opdracht", "opdrachten",
+            # Algemene vaagheid / marketingtaal
+            "belangrijk", "positief", "negatief", "mogelijk", "mogelijkheden",
+            "mogelijkheid", "impact", "betekenis", "betekent", "waarde",
+            "focus", "gericht", "actief", "actieve", "nieuwe", "actueel",
+            # Gedrag / houding
+            "openstaan", "samen", "samenwerken", "zelf", "eigen",
+            "denken", "doen", "maken", "kiezen", "kies", "vinden",
+            "vind", "gaan", "kun", "kan", "zullen", "worden",
+            # Contextwoorden
+            "omgeving", "context", "situatie", "praktische",
+            "brede", "complexe", "diverse", "verschillende",
+            # Engels (veel voorkomend ruis)
+            "you", "your", "are", "will", "what", "then", "like", "choose",
+            "interested", "experience", "experiencing",
+            "learning", "thinking",
+            "and", "the", "for", "with", "from", "about",
+            # Overig
+            "hbo", "urban", "veiligheid", "test", "concept",
+            "bouwen", "gebouwde", "materiaal", "materialen",
+            "yellow", "belt", "serious",
+            "leven", "druk", "manieren", "kijken"
+        }
+        
+        # Belangrijke korte woorden die we WEL willen behouden
+        self.keep_short = {
+            # Technologie & data
+            "ai", "it", "bi", "ml", "vr", "ar", "ux", "ui", "qa",
+            # Media / communicatie / creatief
+            "pr",
+            # Organisatie / mens / maatschappij
+            "hr", "er",
+            # Zorg & welzijn
+            "gz", "gg",
+            # Economie / recht
+            "bt", "tv"
+        }
+        
+        # Voor punctuatie verwijdering
+        self.punct_table = str.maketrans("", "", string.punctuation + "’‘“”´`")
+    
+    def clean(self, text: str) -> str:
+        """Maak tekst schoon en retourneer belangrijke woorden"""
+        if not isinstance(text, str):
+            return ""
+        
+        # Stap 1: Alles naar lowercase
+        text = text.lower()
+        
+        # Stap 2: Verwijder punctuatie
+        text = text.translate(self.punct_table)
+        
+        # Stap 3: Verwijder cijfers
+        text = re.sub(r"\d+", " ", text)
+        
+        # Stap 4: Normaliseer spaties
+        text = re.sub(r"\s+", " ", text).strip()
+        
+        # Stap 5: Filter woorden
+        words = []
+        for word in text.split():
+            # Skip stopwoorden
+            if word in self.ignore_words:
+                continue
+            # Skip korte woorden tenzij belangrijk
+            if len(word) <= 2 and word not in self.keep_short:
+                continue
+            words.append(word)
+        
+        return " ".join(words)
 
-def _format_term_list(terms: List[str]) -> str:
-    """
-    Maak een nette NL opsomming:
-    - 'A'
-    - 'A' en 'B'
-    - 'A', 'B' en 'C'
-    """
-    if not terms:
-        return ""
-    if len(terms) == 1:
-        return f"'{terms[0]}'"
-    if len(terms) == 2:
-        return f"'{terms[0]}' en '{terms[1]}'"
-    # 3 of meer
-    quoted = [f"'{t}'" for t in terms]
-    hoofd = ", ".join(quoted[:-1])
-    laatste = quoted[-1]
-    return f"{hoofd} en {laatste}"
 
-def build_reason(match_terms: List[str], module_name: Optional[str] = None, score: Optional[float] = None) -> str:
-    """
-    Genereer een uitleg waarom de module past.
-    - match_terms: termen waarop je matcht (interesses / keywords)
-    """
-    terms_str = _format_term_list(match_terms)
-
-    if score >= 0.8:
-        kwalificatie = "erg goed"
-    elif score >= 0.6:
-        kwalificatie = "goed"
-    else:
-        kwalificatie = "redelijk"
-
-    # Geen specifieke termen: algemene uitleg
-    if not match_terms:
-        templates = [
-            "Deze module sluit {kwalificatie} aan bij je interesses op basis van tekstuele overeenkomsten.",
-        ]
-    else:
-        # Met match_terms
-        if module_name:
-            templates = [
-                "Je interesse in {terms} komt duidelijk terug in '{module}', waardoor deze module {kwalificatie} bij je aansluit.",
-                "Omdat {terms} centraal staan in '{module}', past deze module {kwalificatie} bij jouw interesses.",
-                "In '{module}' komen {terms} aan bod, wat goed aansluit bij jouw interesses."
-            ]
+class ModuleRecommender:
+    """Hoofdklasse voor module aanbevelingen"""
+    
+    def __init__(self, csv_path: str = None):
+        # Laad data
+        if csv_path is None:
+            csv_path = os.getenv("DATA_PATH", "app/Uitgebreide_VKM_dataset_cleaned.csv")
+        
+        self.df = pd.read_csv(csv_path)
+        self.cleaner = TextCleaner()
+        
+        # Maak schone tekst voor elke module
+        self.df['clean_text'] = (
+            self.df['name'].fillna('') + ' ' + 
+            self.df['shortdescription'].fillna('')
+        ).apply(self.cleaner.clean)
+        
+        # Maak TF-IDF vectorizer en fit op modules
+        self.vectorizer = TfidfVectorizer(
+            ngram_range=(1, 1),  # Alleen losse woorden
+            max_df=0.8,          # Negeer woorden in >80% van modules
+            min_df=2             # Negeer woorden die maar 1x voorkomen
+        )
+        
+        self.module_vectors = self.vectorizer.fit_transform(self.df['clean_text'])
+        self.vocab = self.vectorizer.get_feature_names_out()
+    
+    def find_matches(
+        self,
+        student_text: str,
+        n_results: int = 5,
+        filters: dict = None
+    ) -> pd.DataFrame:
+        """
+        Vind de beste matches voor een student.
+        
+        Args:
+            student_text: Wat de student interessant vindt
+            n_results: Hoeveel resultaten terug te geven
+            filters: Dict met filters zoals {'studycredit': 5, 'level': ['propedeuse']}
+        
+        Returns:
+            DataFrame met aanbevelingen
+        """
+        validate_bio(student_text)
+        
+        # Stap 1: Filter modules indien nodig
+        filtered_df = self._apply_filters(filters)
+        
+        if filtered_df.empty:
+            return self._empty_result()
+        
+        # Stap 2: Vectoriseer student profiel
+        clean_student = self.cleaner.clean(student_text)
+        student_vec = self.vectorizer.transform([clean_student])
+        
+        # Stap 3: Bereken similarity scores
+        indices = filtered_df.index.to_numpy()
+        module_vecs = self.module_vectors[indices]
+        scores = cosine_similarity(student_vec, module_vecs).flatten()
+        
+        # Stap 4: Selecteer top N
+        top_n = min(n_results, len(scores))
+        best_indices = np.argpartition(scores, -top_n)[-top_n:]
+        best_indices = best_indices[np.argsort(scores[best_indices])[::-1]]
+        
+        # Stap 5: Bouw resultaat
+        results = []
+        for idx in best_indices:
+            original_idx = indices[idx]
+            module = filtered_df.loc[original_idx]
+            
+            # Vind gedeelde woorden
+            shared_words = self._find_shared_words(student_vec, module_vecs[idx])
+            
+            # Maak uitleg
+            explanation = self._make_explanation(
+                shared_words, 
+                module['name'],
+                scores[idx]
+            )
+            
+            results.append({
+                'id': module['id'],
+                'name': module['name'],
+                'similarity': scores[idx],
+                'location': module.get('location'),
+                'studycredit': module.get('studycredit'),
+                'level': module.get('level'),
+                'match_terms': shared_words,
+                'reason': explanation
+            })
+        
+        return pd.DataFrame(results)
+    
+    def _apply_filters(self, filters: dict = None) -> pd.DataFrame:
+        """Pas filters toe op de dataset"""
+        df = self.df.copy()
+        
+        if not filters:
+            return df
+        
+        # Filter op studiepunten
+        if 'studycredit' in filters and filters['studycredit']:
+            df = df[df['studycredit'] == filters['studycredit']]
+        
+        # Filter op niveau
+        if 'level' in filters and filters['level']:
+            df = df[df['level'].isin(filters['level'])]
+        
+        # Filter op locatie
+        if 'locations' in filters and filters['locations']:
+            mask = df['location'].apply(
+                lambda x: any(loc.lower() in str(x).lower() 
+                            for loc in filters['locations'])
+            )
+            df = df[mask]
+        
+        # Filter op periode
+        if 'periods' in filters and filters['periods']:
+            period_map = {
+                '1': '2026-09', '2': '2026-10',
+                '3': '2026-11', '4': '2026-12'
+            }
+            prefixes = [period_map.get(p) for p in filters['periods'] if p in period_map]
+            if prefixes:
+                df = df[df['start_date'].str.startswith(tuple(prefixes))]
+        
+        return df
+    
+    def _find_shared_words(self, student_vec, module_vec, max_words: int = 6) -> List[str]:
+        """Vind woorden die in beide vectoren voorkomen"""
+        # Indices waar beide vectoren niet-nul zijn
+        student_idx = set(student_vec.nonzero()[1])
+        module_idx = set(module_vec.nonzero()[1])
+        
+        # Gedeelde indices
+        shared = student_idx & module_idx
+        
+        if not shared:
+            return []
+        
+        # Sorteer op module score en neem top N
+        word_scores = [(i, module_vec[0, i]) for i in shared]
+        word_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        return [self.vocab[i] for i, _ in word_scores[:max_words]]
+    
+    def _make_explanation(self, words: List[str], module_name: str, score: float) -> str:
+        """Genereer uitleg waarom deze module past"""
+        # Bepaal kwalificatie op basis van score
+        if score >= 0.8:
+            quality = "uitstekend"
+        elif score >= 0.6:
+            quality = "goed"
         else:
-            templates = [
-                "Deze module sluit {kwalificatie} aan bij je interesses in {terms}.",
-                "Omdat {terms} in deze module aan bod komen, lijkt deze {kwalificatie} bij je te passen.",
-            ]
-
-    template = random.choice(templates)
-    return template.format(
-        kwalificatie=kwalificatie,
-        terms=terms_str,
-        module=module_name if module_name else ""
-    )
-
-def extract_match_terms(student_vec, module_vec, feature_names, max_terms: int = 8) -> List[str]:
-    """
-    Welke kernwoorden zowel in de studentvector als in de modulevector voorkomen.
-    """
-    # indices waar de vector niet 0 is
-    student_idx = set(student_vec.nonzero()[1])
-    module_idx = set(module_vec.nonzero()[1])
-
-    shared_idx = sorted(student_idx & module_idx)
-    terms = [feature_names[i] for i in shared_idx]
-
-    return terms[:max_terms]
+            quality = "redelijk"
+        
+        # Geen specifieke woorden gevonden
+        if not words:
+            return f"Deze module sluit {quality} aan bij je profiel."
+        
+        # Maak lijst van woorden leesbaar
+        if len(words) == 1:
+            word_text = words[0]
+        elif len(words) == 2:
+            word_text = f"{words[0]} en {words[1]}"
+        else:
+            word_text = ", ".join(words[:-1]) + f" en {words[-1]}"
+        
+        # Kies een template
+        templates = [
+            f"De thema's {word_text} komen terug in '{module_name}', wat {quality} bij je past.",
+            f"'{module_name}' behandelt {word_text}, waardoor deze module {quality} aansluit.",
+            f"Op basis van {word_text} lijkt '{module_name}' {quality} bij je profiel te passen."
+        ]
+        
+        # Kies semi-random (maar consistent voor dezelfde score)
+        template_idx = int(score * 10) % len(templates)
+        return templates[template_idx]
+    
+    def _empty_result(self) -> pd.DataFrame:
+        """Retourneer lege DataFrame met juiste kolommen"""
+        return pd.DataFrame(columns=[
+            'id', 'name', 'similarity', 'location',
+            'studycredit', 'level', 'match_terms', 'reason'
+        ])
 
 def recommend_modules(
     student_profile: str,
@@ -235,95 +314,31 @@ def recommend_modules(
     periods: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """
-    Geeft top 5 modules voor een studentprofiel,
-    inclusief:
-    - similarity (werkelijke cosine score)
-    - match_terms
-    - reason (duidelijk-uitleg)
+    Vind beste modules voor een student.
+    
+    Voorbeeld gebruik:
+        results = recommend_modules(
+            student_profile="Ik vind programmeren en AI interessant",
+            top_n=5,
+            studycredit=5,
+            level=['propedeuse']
+        )
     """
-    validate_bio(student_profile)
-
-    # Start met volledige df
-    filtered_df = df.copy()
-
-    # Filter op studiepunten
+    # Validatie
+    if not student_profile or len(student_profile.strip()) < 10:
+        raise ValueError("Student profiel moet minimaal 10 karakters bevatten")
+    
+    # Bouw filters dict
+    filters = {}
     if studycredit is not None:
-        filtered_df = filtered_df[filtered_df["studycredit"] == studycredit]
-
-    # Filter op level
+        filters['studycredit'] = studycredit
     if level:
-        filtered_df = filtered_df[filtered_df["level"].isin(level)]
-
-    # Filter op locaties (any match)
+        filters['level'] = level
     if locations:
-        filtered_df = filtered_df[
-            filtered_df["location"].apply(lambda x: any(l.lower() in str(x).lower() for l in locations))
-        ]
-
-    # Filter op periods (map '1'->'2026-09' etc.)
+        filters['locations'] = locations
     if periods:
-        period_map = {
-            '1': '2026-09',
-            '2': '2026-10',
-            '3': '2026-11',
-            '4': '2026-12'
-        }
-        period_prefixes = [period_map.get(p, '') for p in periods if p in period_map]
-        if period_prefixes:
-            filtered_df = filtered_df[
-                filtered_df["start_date"].str.startswith(tuple(period_prefixes))
-            ]
-
-    # Niks over? Return lege tabel met juiste kolommen
-    if filtered_df.empty:
-        return pd.DataFrame(
-            columns=[
-                "id", "name", "similarity",
-                "location", "studycredit",
-                "level", "match_terms", "reason"
-            ]
-        )
-
-    # Studentprofiel vectoriseren
-    clean_profile = prepare_text_for_matching(student_profile)
-    student_vec = vectorizer.transform([clean_profile])
-
-    # Bijbehorende rijen uit X pakken
-    row_indices = filtered_df.index.to_numpy()
-    X_filtered = X[row_indices]
-
-    # Cosine similarity
-    sims = cosine_similarity(student_vec, X_filtered).flatten()
-
-    # In kopie wegschrijven
-    filtered_df = filtered_df.copy()
-    filtered_df["similarity"] = sims
-
-    # Sorteren en top N pakken
-    top = filtered_df.sort_values("similarity", ascending=False).head(top_n)
-
-    match_terms_list: List[List[str]] = []
-    reasons: List[str] = []
-
-    for idx in top.index:
-        # positie van deze rij binnen X_filtered
-        pos = np.where(row_indices == idx)[0][0]
-        module_vec = X_filtered[pos]
-
-        terms = extract_match_terms(student_vec, module_vec, FEATURE_NAMES)
-        match_terms_list.append(terms)
-
-        reasons.append(
-            build_reason(
-                terms,
-                module_name=top.at[idx, "name"],
-                score=top.at[idx, "similarity"] 
-            )
-        )
-
-    # Kolommen selecteren en verrijken
-    top = top[["id", "name", "similarity", "location", "studycredit", "level"]].copy()
-    top["match_terms"] = match_terms_list
-    top["reason"] = reasons
-
-    return top.reset_index(drop=True)
+        filters['periods'] = periods
+    
+    # Maak recommender en vind matches
+    recommender = ModuleRecommender()
+    return recommender.find_matches(student_profile, top_n, filters or None)
