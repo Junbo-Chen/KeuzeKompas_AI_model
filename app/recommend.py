@@ -132,7 +132,7 @@ DATA_PATH = os.getenv("DATA_PATH", "app/Uitgebreide_VKM_dataset_cleaned.csv")
 df = pd.read_csv(DATA_PATH)
 
 # Verwachte kolommen (minimaal):
-# id, name, shortdescription, location, studycredit, level, module_tags, ...
+# id, name, shortdescription, module_tags, ...
 # We maken/overschrijven een 'combined_text'-kolom op basis van relevante velden.
 
 df['combined_text'] = (
@@ -175,10 +175,8 @@ def _format_term_list(terms: List[str]) -> str:
 
 def build_reason(match_terms: List[str], module_name: Optional[str] = None, score: Optional[float] = None) -> str:
     """
-    Genereer een korte NL tekst waarom de module past.
+    Genereer een uitleg waarom de module past.
     - match_terms: termen waarop je matcht (interesses / keywords)
-    - module_name: optioneel, naam van de module voor iets persoonlijkere tekst
-    - score: optioneel, genormaliseerde similarity-score (0–1)
     """
     terms_str = _format_term_list(match_terms)
 
@@ -217,8 +215,7 @@ def build_reason(match_terms: List[str], module_name: Optional[str] = None, scor
 
 def extract_match_terms(student_vec, module_vec, feature_names, max_terms: int = 8) -> List[str]:
     """
-    Bepaal welke termen (woorden) zowel in de studentvector
-    als in de modulevector voorkomen.
+    Welke kernwoorden zowel in de studentvector als in de modulevector voorkomen.
     """
     # indices waar de vector niet 0 is
     student_idx = set(student_vec.nonzero()[1])
