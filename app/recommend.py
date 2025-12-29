@@ -8,6 +8,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from nltk.corpus import stopwords
 import nltk
 from typing import List, Optional
+from fastapi import HTTPException
 
 # Download Nederlandse stopwoorden
 try:
