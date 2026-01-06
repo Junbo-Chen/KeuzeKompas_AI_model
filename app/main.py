@@ -12,12 +12,13 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.recommend import recommend_modules  # Assuming recommend.py is updated as needed
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Request
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Security: Load API key from env (set in deploy platform)
-API_KEY = os.environ.get("API_KEY", "default-key-change-in-production")
+API_KEY = os.getenv("API_KEY")
 
 # Logging setup: Secure logging to file with rotation (max 5MB, 3 backups)
 logger = logging.getLogger("api_logger")
@@ -37,26 +38,45 @@ app.add_middleware(
     allow_origins=[
         # frontend link
         # backend link
-        "http://localhost:3000"
+        "http://localhost:8000"
     ],
     allow_credentials=True,
     allow_methods=["POST"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+
+    return response
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Auth scheme
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API key missing"
+        )
+
     if credentials.credentials != API_KEY:
-        logger.warning(f"Invalid API key attempt: {credentials.credentials}")
+        logger.warning("Invalid API key attempt")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
     return credentials.credentials
 
 class StudentProfile(BaseModel):

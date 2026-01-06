@@ -18,9 +18,11 @@ except LookupError:
     DUTCH_STOPWORDS = set(stopwords.words("dutch"))
 
 def validate_bio(text: str):
-    """Valideer of de bio alleen toegestane karakters bevat"""
     if not re.match(r"^[\w\s\-\.,!?]+$", text, re.UNICODE):
-        raise HTTPException(status_code=400, detail="Invalid characters in bio")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid input detected"
+        )
         
 class TextCleaner:
     """Maakt tekst schoon voor analyse"""

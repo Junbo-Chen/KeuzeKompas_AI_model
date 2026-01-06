@@ -2,76 +2,86 @@ import requests
 import concurrent.futures
 import time
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 BASE_URL = "http://localhost:8000"
-API_KEY = os.getenv("API_KEY", "default-key-change-in-production")
+API_KEY = os.getenv("API_KEY")
 
 def test_rate_limiting():
-    """Test of rate limiting werkt"""
-    headers = {"Authorization": f"Bearer {API_KEY}"}
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
     payload = {"bio": "test", "periods": [], "locations": []}
-    
+
     print("\n=== Rate Limiting Test ===")
     print("Sending 150 requests rapidly...")
-    
-    success_count = 0
-    rate_limited_count = 0
-    
+
+    status_counts = {}  # ✅ HIER, buiten de loop
+
     start = time.time()
-    
+
     for i in range(150):
         response = requests.post(
             f"{BASE_URL}/recommend",
             headers=headers,
             json=payload
         )
-        
-        if response.status_code == 200:
-            success_count += 1
-        elif response.status_code == 429:  # Too Many Requests
-            rate_limited_count += 1
-        
+
+        code = response.status_code
+        status_counts[code] = status_counts.get(code, 0) + 1
+
         if (i + 1) % 50 == 0:
             print(f"  {i + 1} requests sent...")
-    
+
     elapsed = time.time() - start
-    
-    print(f"\nResults:")
-    print(f"  Total time: {elapsed:.2f}s")
-    print(f"  Successful: {success_count}")
-    print(f"  Rate limited: {rate_limited_count}")
-    print(f"  Rate limiting {'WORKING ✓' if rate_limited_count > 0 else 'NOT WORKING ✗'}")
+
+    print("\nResults:")
+    for code, count in sorted(status_counts.items()):
+        print(f"  {code}: {count}")
+
+    print(
+        f"\nRate limiting "
+        f"{'WORKING ✓' if status_counts.get(429, 0) > 0 else 'NOT WORKING ✗'}"
+    )
+
 
 def test_concurrent_requests():
-    """Test met parallelle requests"""
-    headers = {"Authorization": f"Bearer {API_KEY}"}
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
     payload = {"bio": "test", "periods": [], "locations": []}
-    
-    def make_request(i):
-        try:
-            response = requests.post(
-                f"{BASE_URL}/recommend",
-                headers=headers,
-                json=payload,
-                timeout=10
-            )
-            return response.status_code
-        except Exception as e:
-            return f"Error: {e}"
-    
+
+    def make_request(_):
+        r = requests.post(
+            f"{BASE_URL}/recommend",
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        return r.status_code
+
     print("\n=== Concurrent Requests Test ===")
-    print("Sending 50 concurrent requests...")
-    
+    print("Sending 150 concurrent requests...")
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
-        results = list(executor.map(make_request, range(50)))
-    
-    status_codes = {}
+        results = list(executor.map(make_request, range(150)))
+
+    status_counts = {}
     for code in results:
-        status_codes[code] = status_codes.get(code, 0) + 1
-    
+        status_counts[code] = status_counts.get(code, 0) + 1
+
     print("\nResults:")
-    for code, count in sorted(status_codes.items()):
-        print(f"  {code}: {count} requests")
+    for code, count in sorted(status_counts.items()):
+        print(f"  {code}: {count}")
+
+    print(
+        f"\nRate limiting "
+        f"{'WORKING ✓' if status_counts.get(429, 0) > 0 else 'NOT WORKING ✗'}"
+    )
 
 if __name__ == "__main__":
     test_rate_limiting()
