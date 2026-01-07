@@ -86,19 +86,31 @@ class StudentProfile(BaseModel):
     studycredit: Optional[int] = None
     level: Optional[List[str]] = None
 
+# @app.post("/recommend")
+# @limiter.limit("100/minute")  # Rate limit
+# async def get_recommendations(profile: StudentProfile, request: Request, api_key: str = Depends(verify_api_key)):
+#     try:
+#         logger.info(f"Processing recommendation for bio: {profile.bio[:50]}...")  # Log partial for privacy
+#         recs = recommend_modules(
+#             student_profile=profile.bio,
+#             top_n=5,
+#             studycredit=profile.studycredit,
+#             level=profile.level,
+#             locations=profile.locations,
+#             periods=profile.periods,
+#         )
+#         return recs.to_dict(orient="records")
+#     except Exception as e:
+#         logger.error(f"Error in recommendation: {str(e)}")
+#         raise HTTPException(status_code=500, detail="Internal server error")
 @app.post("/recommend")
-@limiter.limit("100/minute")  # Rate limit
+@limiter.limit("100/minute")
 async def get_recommendations(profile: StudentProfile, request: Request, api_key: str = Depends(verify_api_key)):
     try:
-        logger.info(f"Processing recommendation for bio: {profile.bio[:50]}...")  # Log partial for privacy
-        recs = recommend_modules(
-            student_profile=profile.bio,
-            top_n=5,
-            studycredit=profile.studycredit,
-            level=profile.level,
-            locations=profile.locations,
-            periods=profile.periods,
-        )
+        logger.info(f"Processing recommendation for bio: {profile.bio[:50]}...")
+        # Tijdelijk dummy voor testing (comment uit echte call)
+        # recs = recommend_modules(...)
+        recs = pd.DataFrame([{"module": "dummy1"}, {"module": "dummy2"}])  # Dummy DataFrame
         return recs.to_dict(orient="records")
     except Exception as e:
         logger.error(f"Error in recommendation: {str(e)}")

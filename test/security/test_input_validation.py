@@ -2,7 +2,7 @@ import requests
 import os
 
 BASE_URL = "http://localhost:8000"
-API_KEY = os.getenv("API_KEY", "default-key-change-in-production")
+API_KEY = os.getenv("API_KEY")
 
 def test_injection_attacks():
     """Test verschillende injection attacks"""

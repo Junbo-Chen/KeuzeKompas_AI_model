@@ -2,7 +2,7 @@ import sys
 import os
 
 # Set API key for tests
-os.environ["API_KEY"] = os.getenv("API_KEY", "default-key-change-in-production")
+os.environ["API_KEY"] = os.getenv("API_KEY")
 
 # Import all test modules
 from test_auth import test_no_api_key, test_invalid_api_key, test_sql_injection_in_api_key
