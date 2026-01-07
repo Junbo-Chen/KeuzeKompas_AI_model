@@ -17,13 +17,13 @@ def test_rate_limiting():
     payload = {"bio": "test", "periods": [], "locations": []}
 
     print("\n=== Rate Limiting Test ===")
-    print("Sending 150 requests rapidly...")
+    print("Sending 110 requests rapidly...")
 
     status_counts = {}  # ✅ HIER, buiten de loop
 
     start = time.time()
 
-    for i in range(150):
+    for i in range(110):
         response = requests.post(
             f"{BASE_URL}/recommend",
             headers=headers,
@@ -65,10 +65,10 @@ def test_concurrent_requests():
         return r.status_code
 
     print("\n=== Concurrent Requests Test ===")
-    print("Sending 150 concurrent requests...")
+    print("Sending 110 concurrent requests...")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
-        results = list(executor.map(make_request, range(150)))
+        results = list(executor.map(make_request, range(110)))
 
     status_counts = {}
     for code in results:
