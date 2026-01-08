@@ -7,3 +7,4 @@ nltk
 python-dotenv
 slowapi
 pytest
+requests
