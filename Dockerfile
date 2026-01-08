@@ -1,26 +1,19 @@
 FROM python:3.12-slim
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies if needed
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies FIRST (before copying app code)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download NLTK data - use 'from nltk import download' to avoid import issues
-RUN python -c "from nltk import download; download('stopwords', download_dir='/usr/local/nltk_data'); download('wordnet', download_dir='/usr/local/nltk_data')"
+# Download NLTK data
+ENV NLTK_DATA=/usr/local/nltk_data
+RUN python -c "from nltk import download; download('stopwords'); download('wordnet')"
 
-# Copy application files AFTER dependencies are installed
-# Assuming your project structure has an 'app' folder containing main.py, recommend.py, and the CSV
 COPY app /app/app
 
-# Expose port
-EXPOSE 8000
-
-# Command to run the app
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Render gebruikt $PORT
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
