@@ -254,14 +254,12 @@ jobs:
         RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
       run: |
-        curl -X POST "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
-        -H "Authorization: Bearer $RENDER_API_KEY" \
-        -H "Content-Type: application/json" \
-        -d @- <<'EOF'
-        {
-          "clearCache": true
-        }
-        EOF
+        echo "Deploying to Render..."
+        curl -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+          -H "Authorization: Bearer ${RENDER_API_KEY}" \
+          -H "Content-Type: application/json" \
+          -d "{\"clearCache\": true}" \
+          -w "\nHTTP Status: %{http_code}\n"
 
 
     - name: Wait for deployment
