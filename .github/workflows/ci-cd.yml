@@ -205,10 +205,15 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
+        file: ./Dockerfile
         push: false
+        load: true  # ← BELANGRIJK: Laad image in Docker daemon
         tags: keuzekompas-api:test
         cache-from: type=gha
         cache-to: type=gha,mode=max
+
+    - name: Verify image exists
+      run: docker images | grep keuzekompas-api
 
     - name: Test Docker image
       run: |
@@ -217,8 +222,17 @@ jobs:
           -e DATA_PATH=app/Uitgebreide_VKM_dataset_cleaned.csv \
           --name test-container \
           keuzekompas-api:test
-        sleep 15
-        curl -f http://localhost:8000/docs || exit 1
+        
+        echo "Waiting for container to start..."
+        sleep 20
+        
+        echo "Checking container logs..."
+        docker logs test-container
+        
+        echo "Testing API endpoint..."
+        curl -f http://localhost:8000/docs || (docker logs test-container && exit 1)
+        
+        echo "Stopping container..."
         docker stop test-container
 
   # Job 6: Deploy to Production
