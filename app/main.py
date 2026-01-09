@@ -49,12 +49,20 @@ app.add_middleware(
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
 
+    # Altijd veilige headers
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    # ❗ Geen CSP voor Swagger / ReDoc
+    if request.url.path in ["/docs", "/redoc", "/openapi.json"]:
+        return response
+
+    # CSP alleen voor API endpoints
     response.headers["Content-Security-Policy"] = "default-src 'self'"
 
     return response
+
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
