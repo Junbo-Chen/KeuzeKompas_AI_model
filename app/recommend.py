@@ -1,6 +1,7 @@
 import os
 import re
 import string
+import random
 import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -30,15 +31,9 @@ class TextCleaner:
     def __init__(self):
         # Woorden die we willen negeren omdat ze weinig betekenis hebben
         self.ignore_words = DUTCH_STOPWORDS | {
-            # Algemene Nederlandse stopwoorden (extra)
-            "bij", "voor", "met", "door", "zonder", "over", "onder", "tegen",
-            "tussen", "na", "vooraf", "achter", "tijdens", "binnen", "buiten",
-            # Onderwijs / studiecontext
-            "school", "opleiding", "opleidingen", "module", "modules",
-            "keuzemodule", "minor", "programma", "leerjaar", "jaar",
-            "week", "periode", "semester", "studie", "studies",
-            "student", "studenten", "leerling", "leerlingen",
-            "docent", "docenten", "les", "lessen",
+            'de', 'het', 'een', 'en', 'van', 'in', 'op', 'met', 'voor', 'te', 'is', 'ik', 'je', 'mijn',
+            'aan', 'uit', 'over', 'door', 'bij', 'als', 'wat', 'wie', 'hoe', 'niet', 'wel', 'dan',
+            'of', 'maar', 'toch', 'ook', 'nog', 'al', 'alleen', 'zo', 'ze', 'zij', 'hij'
             # Leren & ontwikkelen (vaak leeg in betekenis)
             "leren", "geleerd", "leren", "ontwikkeling", "ontwikkelen",
             "verdieping", "kennis", "vaardigheid", "vaardigheden",
@@ -90,35 +85,29 @@ class TextCleaner:
         self.punct_table = str.maketrans("", "", string.punctuation + "’‘“”´`")
     
     def clean(self, text: str) -> str:
-        """Maak tekst schoon en retourneer belangrijke woorden"""
+        """Verwerk tekst naar kernwoorden zonder stopwoorden en irrelevante korte woorden."""
         if not isinstance(text, str):
             return ""
         
-        # Stap 1: Alles naar lowercase
+        # 1. Alles lowercase en verwijder punctuatie
         text = text.lower()
-        
-        # Stap 2: Verwijder punctuatie
         text = text.translate(self.punct_table)
-        
-        # Stap 3: Verwijder cijfers
-        text = re.sub(r"\d+", " ", text)
-        
-        # Stap 4: Normaliseer spaties
-        text = re.sub(r"\s+", " ", text).strip()
-        
-        # Stap 5: Filter woorden
-        words = []
-        for word in text.split():
-            # Skip stopwoorden
-            if word in self.ignore_words:
-                continue
-            # Skip korte woorden tenzij belangrijk
-            if len(word) <= 2 and word not in self.keep_short:
-                continue
-            words.append(word)
-        
-        return " ".join(words)
 
+        # 2. Verwijder cijfers en extra spaties
+        text = re.sub(r"\d+", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+
+        # 3. Tokenize en filter woorden
+        tokens = text.split()
+        
+        # Filter logica: stopwoorden en korte woorden
+        filtered_tokens = [
+            w for w in tokens
+            if (w not in self.ignore_words) and (len(w) > 2 or w in self.keep_short)
+        ]
+
+        # 4. Samenvoegen tot string
+        return " ".join(filtered_tokens)
 
 class ModuleRecommender:
     """Hoofdklasse voor module aanbevelingen"""
@@ -146,74 +135,71 @@ class ModuleRecommender:
         
         self.module_vectors = self.vectorizer.fit_transform(self.df['clean_text'])
         self.vocab = self.vectorizer.get_feature_names_out()
-    
+
     def find_matches(
         self,
-        student_text: str,
-        n_results: int = 5,
-        filters: dict = None
+        student_input: str,
+        max_results: int = 5,
+        filter_options: Optional[dict] = None
     ) -> pd.DataFrame:
         """
-        Vind de beste matches voor een student.
+        Zoek naar de meest relevante modules voor een student.
         
         Args:
-            student_text: Wat de student interessant vindt
-            n_results: Hoeveel resultaten terug te geven
-            filters: Dict met filters zoals {'studycredit': 5, 'level': ['propedeuse']}
+            student_input: Tekst waarin de interesses van de student staan beschreven.
+            max_results: Aantal aanbevelingen dat teruggegeven moet worden.
+            filter_options: Optionele filters zoals {'studycredit': 5, 'level': ['propedeuse']}.
         
         Returns:
-            DataFrame met aanbevelingen
+            DataFrame met module-aanbevelingen inclusief score en uitleg.
         """
-        validate_bio(student_text)
-        
-        # Stap 1: Filter modules indien nodig
-        filtered_df = self._apply_filters(filters)
-        
-        if filtered_df.empty:
+        # Valideer input
+        validate_bio(student_input)
+
+        # 1. Pas filters toe
+        filtered_modules = self._apply_filters(filter_options)
+        if filtered_modules.empty:
             return self._empty_result()
-        
-        # Stap 2: Vectoriseer student profiel
-        clean_student = self.cleaner.clean(student_text)
-        student_vec = self.vectorizer.transform([clean_student])
-        
-        # Stap 3: Bereken similarity scores
-        indices = filtered_df.index.to_numpy()
-        module_vecs = self.module_vectors[indices]
-        scores = cosine_similarity(student_vec, module_vecs).flatten()
-        
-        # Stap 4: Selecteer top N
-        top_n = min(n_results, len(scores))
-        best_indices = np.argpartition(scores, -top_n)[-top_n:]
-        best_indices = best_indices[np.argsort(scores[best_indices])[::-1]]
-        
-        # Stap 5: Bouw resultaat
-        results = []
-        for idx in best_indices:
-            original_idx = indices[idx]
-            module = filtered_df.loc[original_idx]
-            
-            # Vind gedeelde woorden
-            shared_words = self._find_shared_words(student_vec, module_vecs[idx])
-            
-            # Maak uitleg
-            explanation = self._make_explanation(
-                shared_words, 
-                module['name'],
-                scores[idx]
-            )
-            
-            results.append({
-                'id': module['id'],
-                'name': module['name'],
-                'similarity': scores[idx],
-                'location': module.get('location'),
-                'studycredit': module.get('studycredit'),
-                'level': module.get('level'),
-                'match_terms': shared_words,
-                'reason': explanation
+
+        # 2. Maak een vector van het studentenprofiel
+        cleaned_text = self.cleaner.clean(student_input)
+        student_vector = self.vectorizer.transform([cleaned_text])
+
+        # 3. Bereken cosine similarity tussen student en modules
+        module_indices = filtered_modules.index.to_numpy()
+        module_vectors = self.module_vectors[module_indices]
+        similarity_scores = cosine_similarity(student_vector, module_vectors).flatten()
+
+        # 4. Selecteer de beste N resultaten
+        n_select = min(max_results, len(similarity_scores))
+        top_indices = np.argpartition(similarity_scores, -n_select)[-n_select:]
+        top_indices = top_indices[np.argsort(similarity_scores[top_indices])[::-1]]
+
+        # 5. Bouw resultatenlijst
+        recommendations = []
+        for i in top_indices:
+            module_idx = module_indices[i]
+            module_info = filtered_modules.loc[module_idx]
+
+            # Vind gemeenschappelijke woorden
+            common_terms = self._extract_common_terms(student_vector, module_vectors[i])
+
+            # Genereer uitleg
+            explanation_text = self._generate_reason(common_terms, module_info['name'], similarity_scores[i])
+
+            # Voeg module toe aan resultaten
+            recommendations.append({
+                'id': module_info['id'],
+                'name': module_info['name'],
+                'similarity': similarity_scores[i],
+                'location': module_info.get('location'),
+                'studycredit': module_info.get('studycredit'),
+                'level': module_info.get('level'),
+                'match_terms': common_terms,
+                'reason': explanation_text
             })
-        
-        return pd.DataFrame(results)
+
+        return pd.DataFrame(recommendations)
     
     def _apply_filters(self, filters: dict = None) -> pd.DataFrame:
         """Pas filters toe op de dataset"""
@@ -239,11 +225,9 @@ class ModuleRecommender:
             df = df[mask]
         
         if 'periods' in filters and filters['periods']:
-            df['start_date'] = pd.to_datetime(
-                df['start_date'],
-                format="%m/%d/%Y",
-                errors="coerce"
-            )
+            if 'start_date' in df.columns:
+                df['start_date'] = pd.to_datetime(df['start_date'], format="%m/%d/%Y", errors="coerce")
+
 
             period_map = {
                 '1': 9,
@@ -260,56 +244,89 @@ class ModuleRecommender:
         
         return df
     
-    def _find_shared_words(self, student_vec, module_vec, max_words: int = 6) -> List[str]:
-        """Vind woorden die in beide vectoren voorkomen"""
-        # Indices waar beide vectoren niet-nul zijn
-        student_idx = set(student_vec.nonzero()[1])
-        module_idx = set(module_vec.nonzero()[1])
-        
-        # Gedeelde indices
-        shared = student_idx & module_idx
-        
-        if not shared:
+    def _extract_common_terms(self, student_vector, module_vector, max_terms: int = 6) -> List[str]:
+        """
+        Haal woorden op die zowel in het studentenprofiel als de module voorkomen.
+        Sorteer op relevantie volgens de modulevector en beperk tot max_terms.
+        """
+        # Vind indices van woorden die voorkomen in beide vectoren
+        student_words_idx = set(student_vector.nonzero()[1])
+        module_words_idx = set(module_vector.nonzero()[1])
+
+        shared_idx = student_words_idx.intersection(module_words_idx)
+        if not shared_idx:
             return []
-        
-        # Sorteer op module score en neem top N
-        word_scores = [(i, module_vec[0, i]) for i in shared]
-        word_scores.sort(key=lambda x: x[1], reverse=True)
-        
-        return [self.vocab[i] for i, _ in word_scores[:max_words]]
+
+        # Bereken scores per gedeeld woord
+        scored_words = [(i, module_vector[0, i]) for i in shared_idx]
+
+        # Sorteer aflopend op score
+        scored_words.sort(key=lambda x: x[1], reverse=True)
+
+        # Vertaal indices naar woorden uit vocab
+        top_words = [self.vocab[i] for i, _ in scored_words[:max_terms]]
+        return top_words
+
+
+    def _generate_reason(self, terms: List[str], module_name: str, similarity: float) -> str:
+        """
+        Genereer een tekstuele uitleg waarom de module aansluit bij het studentenprofiel.
+        """
+        # Bepaal beoordeling op basis van similarity
+        if similarity >= 0.8:
+            match_level = "excellent"
+        elif similarity >= 0.6:
+            match_level = "strong"
+        elif similarity >= 0.4:
+            match_level = "moderate"
+        else:
+            match_level = "weak"
+
+        # Als er geen termen zijn, algemene verklaring
+        if not terms:
+            fallback = {
+                "excellent": f"Deze module sluit uitstekend aan bij je algemene profiel.",
+                "strong": f"Deze module past goed binnen je interesses.",
+                "moderate": f"Deze module heeft raakvlakken met je profiel.",
+                "weak": f"Deze module kan interessant zijn om te verkennen."
+            }
+            return fallback[match_level]
     
-    def _make_explanation(self, words: List[str], module_name: str, score: float) -> str:
-        """Genereer uitleg waarom deze module past"""
-        # Bepaal kwalificatie op basis van score
-        if score >= 0.8:
-            quality = "uitstekend"
-        elif score >= 0.6:
-            quality = "goed"
+        # Format woorden lijst
+        if len(terms) == 1:
+            word_phrase = f"'{terms[0]}'"
+        elif len(terms) == 2:
+            word_phrase = f"'{terms[0]}' en '{terms[1]}'"
         else:
-            quality = "redelijk"
+            word_phrase = ", ".join(terms[:-1]) + f" en {terms[-1]}"
+
+        # Templates per match level
+        templates = {
+            "excellent": [
+                f"Sterke match: {word_phrase} zijn kernthema's in '{module_name}'.",
+                f"Perfect! '{module_name}' focust op {word_phrase}.",
+                f"Top aansluiting via {word_phrase} in '{module_name}'."
+            ],
+            "strong": [
+                f"Goede match: '{module_name}' behandelt {word_phrase}.",
+                f"'{module_name}' sluit aan door focus op {word_phrase}.",
+                f"Interessant: {word_phrase} komen uitgebreid terug in '{module_name}'."
+            ],
+            "moderate": [
+                f"'{module_name}' raakt aan {word_phrase}.",
+                f"Mogelijke fit: {word_phrase} zijn onderdeel van '{module_name}'.",
+                f"'{module_name}' bevat elementen van {word_phrase}."
+            ],
+            "weak": [
+                f"'{module_name}' heeft raakvlakken met {word_phrase}.",
+                f"Beperkte overlap via {word_phrase} in '{module_name}'.",
+                f"'{module_name}' refereert aan {word_phrase}."
+            ]
+        }
         
-        # Geen specifieke woorden gevonden
-        if not words:
-            return f"Deze module sluit {quality} aan bij je profiel."
-        
-        # Maak lijst van woorden leesbaar
-        if len(words) == 1:
-            word_text = words[0]
-        elif len(words) == 2:
-            word_text = f"{words[0]} en {words[1]}"
-        else:
-            word_text = ", ".join(words[:-1]) + f" en {words[-1]}"
-        
-        # Kies een template
-        templates = [
-            f"De thema's {word_text} komen terug in '{module_name}', wat {quality} bij je past.",
-            f"'{module_name}' behandelt {word_text}, waardoor deze module {quality} aansluit.",
-            f"Op basis van {word_text} lijkt '{module_name}' {quality} bij je profiel te passen."
-        ]
-        
-        # Kies semi-random (maar consistent voor dezelfde score)
-        template_idx = int(score * 10) % len(templates)
-        return templates[template_idx]
+        # Kies random template (maar seed met score voor consistentie)
+        random.seed(int(similarity * 1000))
+        return random.choice(templates[match_level])
     
     def _empty_result(self) -> pd.DataFrame:
         """Retourneer lege DataFrame met juiste kolommen"""
@@ -354,4 +371,4 @@ def recommend_modules(
     
     # Maak recommender en vind matches
     recommender = ModuleRecommender()
-    return recommender.find_matches(student_profile, top_n, filters or None)
+    return recommender.find_matches(student_profile, top_n, filters)
