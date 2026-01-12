@@ -38,7 +38,8 @@ app.add_middleware(
     allow_origins=[
         # frontend link
         # backend link
-        "http://localhost:8000"
+        "http://localhost:8000",
+        "https://keuzekompas-ai-model.onrender.com"
     ],
     allow_credentials=True,
     allow_methods=["POST"],
