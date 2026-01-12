@@ -238,15 +238,25 @@ class ModuleRecommender:
             )
             df = df[mask]
         
-        # Filter op periode
         if 'periods' in filters and filters['periods']:
+            df['start_date'] = pd.to_datetime(
+                df['start_date'],
+                format="%m/%d/%Y",
+                errors="coerce"
+            )
+
             period_map = {
-                '1': '2026-09', '2': '2026-10',
-                '3': '2026-11', '4': '2026-12'
+                '1': 9,
+                '2': 10,
+                '3': 11,
+                '4': 12
             }
-            prefixes = [period_map.get(p) for p in filters['periods'] if p in period_map]
-            if prefixes:
-                df = df[df['start_date'].str.startswith(tuple(prefixes))]
+
+            months = [period_map[p] for p in filters['periods'] if p in period_map]
+
+            if months:
+                df = df[df['start_date'].dt.month.isin(months)]
+
         
         return df
     
