@@ -31,14 +31,14 @@ class TextCleaner:
     def __init__(self):
         # Woorden die we willen negeren omdat ze weinig betekenis hebben
         self.ignore_words = DUTCH_STOPWORDS | {
-            "de", "het", "een", "en", "van", "in", "op", "met", "voor", "te", "is", "ik", "je", "mijn",
+            "het", "een", "van", "met", "voor", "mijn",
             "aan", "uit", "over", "door", "bij", "als", "wat", "wie", "hoe", "niet", "wel", "dan",
-            "of", "maar", "toch", "ook", "nog", "al", "alleen", "zo", "ze", "zij", "hij"
+            "maar", "toch", "ook", "nog", "alleen", "zij", "hij", "student",
             # Leren & ontwikkelen (vaak leeg in betekenis)
             "leren", "geleerd", "leren", "ontwikkeling", "ontwikkelen",
             "verdieping", "kennis", "vaardigheid", "vaardigheden",
             "ervaring", "ervaringen", "competentie", "competenties",
-            "theorie", "praktijk", "praktische", "inhoudelijk", "opleiding"
+            "theorie", "praktijk", "praktische", "inhoudelijk", "opleiding",
             # Project / werk / stage
             "werk", "werken", "werkzaamheden", "proces",
             "project", "projecten", "casus", "casussen", "cases",
