@@ -37,7 +37,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         # frontend link
-        # backend link
+        "*",
         "http://localhost:8000",
         "https://keuzekompas-ai-model.onrender.com"
     ],
