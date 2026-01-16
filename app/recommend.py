@@ -46,7 +46,7 @@ class TextCleaner:
             "you", "your", "are", "will", "what", "then", "like", "choose",
             "interested", "experience", "experiencing",
             "learning", "thinking",
-            "and", "the", "for", "with", "from", "about",            "hbo", "urban", "veiligheid", "test", "concept",
+            "and", "the", "for", "with", "from", "about",
             "bouwen", "gebouwde", "materiaal", "materialen",
             "leven", "druk", "manieren", "kijken"
         }
